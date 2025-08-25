@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Opposite Drag Ball Game with Physics</title>
+  <style>
+    body { margin: 0; overflow: hidden; background: #f0f0f0; }
+    canvas { display: block; }
+  </style>
+</head>
+<body>
+<canvas id="gameCanvas"></canvas>
+<script>
+const canvas = document.getElementById("gameCanvas");
+const ctx = canvas.getContext("2d");
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
+
+let score = 0;
+
+// Physics ball class
+class Ball {
+  constructor(x, y, r, color, isBlack = false) {
+    this.x = x;
+    this.y = y;
+    this.r = r;
+    this.color = color;
+    this.vx = (Math.random() - 0.5) * 6; // give initial movement
+    this.vy = (Math.random() - 0.5) * 6;
+    this.isBlack = isBlack;
+    this.alive = true;
+    this.respawnTimer = 0;
+  }
+  update() {
+    if (!this.alive) {
+      if (this.respawnTimer > 0) {
+        this.respawnTimer--;
+      } else if (this.respawnTimer === 0) {
+        // Respawn at random location
+        this.x = Math.random() * canvas.width;
+        this.y = Math.random() * canvas.height;
+        this.vx = (Math.random() - 0.5) * 6;
+        this.vy = (Math.random() - 0.5) * 6;
+        this.alive = true;
+      }
+      return;
+    }
+
+    this.x += this.vx;
+    this.y += this.vy;
+
+    // Friction only for black ball
+    if (this.isBlack) {
+      this.vx *= 0.98;
+      this.vy *= 0.98;
+    }
+
+    // Bounce off walls
+    if (this.x - this.r < 0) { this.x = this.r; this.vx *= -1; }
+    if (this.x + this.r > canvas.width) { this.x = canvas.width - this.r; this.vx *= -1; }
+    if (this.y - this.r < 0) { this.y = this.r; this.vy *= -1; }
+    if (this.y + this.r > canvas.height) { this.y = canvas.height - this.r; this.vy *= -1; }
+  }
+  draw() {
+    if (!this.alive) return;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.r, 0, Math.PI * 2);
+    ctx.fillStyle = this.color;
+    ctx.fill();
+    ctx.closePath();
+  }
+}
+
+// Pop effect particles
+class Particle {
+  constructor(x, y, color) {
+    this.x = x;
+    this.y = y;
+    this.vx = (Math.random() - 0.5) * 8;
+    this.vy = (Math.random() - 0.5) * 8;
+    this.life = 30;
+    this.color = color;
+  }
+  update() {
+    this.x += this.vx;
+    this.y += this.vy;
+    this.life--;
+  }
+  draw() {
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, 4, 0, Math.PI * 2);
+    ctx.fillStyle = this.color;
+    ctx.fill();
+    ctx.closePath();
+  }
+}
+
+let particles = [];
+
+// Black ball (player)
+let blackBall = new Ball(canvas.width / 2, canvas.height / 2, 20, "black", true);
+
+// Colored balls
+let colors = ["red", "green", "blue", "orange", "purple"];
+let balls = [blackBall];
+for (let i = 0; i < 5; i++) {
+  balls.push(new Ball(
+    Math.random() * canvas.width,
+    Math.random() * canvas.height,
+    20,
+    colors[i % colors.length]
+  ));
+}
+
+let dragStart = null;
+let dragEnd = null;
+
+canvas.addEventListener("mousedown", (e) => {
+  dragStart = { x: e.clientX, y: e.clientY };
+});
+
+canvas.addEventListener("mousemove", (e) => {
+  if (dragStart) {
+    dragEnd = { x: e.clientX, y: e.clientY };
+  }
+});
+
+canvas.addEventListener("mouseup", (e) => {
+  if (dragStart && dragEnd) {
+    let dx = dragEnd.x - dragStart.x;
+    let dy = dragEnd.y - dragStart.y;
+    // Launch in opposite direction
+    blackBall.vx = -dx * 0.1;
+    blackBall.vy = -dy * 0.1;
+  }
+  dragStart = null;
+  dragEnd = null;
+});
+
+function drawArrow(from, to) {
+  ctx.beginPath();
+  ctx.moveTo(from.x, from.y);
+  ctx.lineTo(to.x, to.y);
+  ctx.strokeStyle = "black";
+  ctx.lineWidth = 2;
+  ctx.stroke();
+}
+
+function checkCollisions() {
+  for (let i = 1; i < balls.length; i++) { // skip blackBall at index 0
+    let b = balls[i];
+    if (!b.alive) continue;
+    let dx = blackBall.x - b.x;
+    let dy = blackBall.y - b.y;
+    let dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist < blackBall.r + b.r) {
+      // Pop the colored ball
+      b.alive = false;
+      b.respawnTimer = 90; // ~1.5s at 60fps
+      score++;
+      for (let p = 0; p < 20; p++) {
+        particles.push(new Particle(b.x, b.y, b.color));
+      }
+    }
+  }
+}
+
+function drawScore() {
+  ctx.font = "24px Arial";
+  ctx.fillStyle = "black";
+  ctx.fillText("Score: " + score, 20, 40);
+}
+
+function gameLoop() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  // Update and draw balls
+  for (let b of balls) {
+    b.update();
+    b.draw();
+  }
+
+  // Handle collisions
+  checkCollisions();
+
+  // Update and draw particles
+  particles = particles.filter(p => p.life > 0);
+  for (let p of particles) {
+    p.update();
+    p.draw();
+  }
+
+  // Draw aim line if dragging
+  if (dragStart && dragEnd) {
+    let dx = dragEnd.x - dragStart.x;
+    let dy = dragEnd.y - dragStart.y;
+    drawArrow(blackBall, { x: blackBall.x - dx, y: blackBall.y - dy });
+  }
+
+  // Draw score
+  drawScore();
+
+  requestAnimationFrame(gameLoop);
+}
+
+gameLoop();
+</script>
+</body>
+</html>
